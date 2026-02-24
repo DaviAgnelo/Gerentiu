@@ -56,7 +56,6 @@ Never commit or publish your .env file or Discord token.
 - [ ] Deployment automation
 - [ ] Expanded administrative tools
 ```
-- Administrative tools
 
 ## Author
 
