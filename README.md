@@ -17,13 +17,13 @@ This repository contains the current public development version (v0.3)
 ---
 
 ## Current Project Structure
-
+```
 src/
 └── gerentiu/
 ├── bot.py
 ├── db.py
 └── cogs/
-
+```
 ## To use Gerentiu (using Debian in this example)
 
 1. Create virtual environment
