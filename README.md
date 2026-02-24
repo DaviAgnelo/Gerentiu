@@ -27,11 +27,11 @@ src/
 ## To use Gerentiu (using Debian in this example)
 
 1. Create virtual environment
----bash
+```bash
 python -m venv .venv
 source .venv/bin/activate
-
-2. Install dependencies
+```
+3. Install dependencies
 ```bash
 pip install -r src/requirements.txt
 ```
