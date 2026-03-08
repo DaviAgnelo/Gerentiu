@@ -21,9 +21,10 @@ class TranslateRoutesCog(commands.Cog):
     @app_commands.describe(
         source="Canal de origem (onde as mensagens serão lidas)",
         target="Canal de destino (onde o eco/tradução será enviado)",
-        lang="Idioma de destino (ex: en, pt, es, fr)"
+        dst_lang="Idioma de destino (ex: en, pt, es, fr)",
+        src_lang="Idioma do canal de fonte (ex: en, pt, es, fr)",
     )
-    async def tr_add(self, interaction: discord.Interaction, source: discord.TextChannel, target: discord.TextChannel, lang: str):
+    async def tr_add(self, interaction: discord.Interaction, source: discord.TextChannel, target: discord.TextChannel, dst_lang: str, src_lang: str):
         if not interaction.guild:
             await interaction.response.send_message("Use em um servidor.", ephemeral=True)
             return
@@ -34,9 +35,9 @@ class TranslateRoutesCog(commands.Cog):
             await interaction.response.send_message("Source e target não podem ser o mesmo canal.", ephemeral=True)
             return
 
-        await set_translation_route(interaction.guild.id, source.id, target.id, lang)
+        await set_translation_route(interaction.guild.id, source.id, target.id, src_lang, dst_lang)
         await interaction.response.send_message(
-            f"✅ Rota criada: {source.mention} → {target.mention} (lang: `{lang.lower().strip()}`)",
+            f"✅ Rota criada: {source.mention} → {target.mention} (src_lang: `{src_lang.lower().strip()}` (dst_lang: `{dst_lang.lower().strip()}`)",
             ephemeral=True,
         )
 
@@ -72,8 +73,8 @@ class TranslateRoutesCog(commands.Cog):
             return
 
         lines = []
-        for src_id, tgt_id, lang in routes:
-            lines.append(f"<#{src_id}> → <#{tgt_id}> (`{lang}`)")
+        for src_id, tgt_id, src_lang, dst_lang in routes:
+            lines.append(f"<#{src_id}> → <#{tgt_id}> (`{src_lang}`) → (`{dst_lang}`)")
 
         embed = discord.Embed(title="🌐 Rotas de tradução")
         embed.description = "\n".join(lines)
