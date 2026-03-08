@@ -10,6 +10,7 @@ COGS = (
     "gerentiu.cogs.moderation",
     "gerentiu.cogs.stats",
     "gerentiu.cogs.translation_routes",
+    "gerentiu.cogs.translation_listener"
 )
 
 #modulos separados do bot (cogs). Sendo moderation e stats no momento. Eles sao carregados
@@ -44,16 +45,6 @@ class GerentiuBot(commands.Bot):
         if not message.guild or message.author.bot:
             return
         await increment_channel_count(message.guild.id, message.channel.id)
-
-        targets = await get_translation_targets(message.guild.id, message.channel.id)
-        if targets:
-            for target_channel_id, target_lang in targets:
-                target_channel = message.guild.get_channel(target_channel_id)
-
-                if target_channel:
-                    await target_channel.send(
-                        f"[FAKE -> {target_lang.upper()}] {message.content}"
-                )
 
         await self.process_commands(message)
 

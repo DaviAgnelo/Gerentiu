@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS translation_routes (
     guild_id INTERGER NOT NULL,
     source_channel_id INTERGER NOT NULL,
     target_channel_id INTERGET NOT NULL,
-    target_lang TEXT NOT NULL,
+    src_lang TEXT NOT NULL,
+    dst_lang TEXT NOT NULL,
     PRIMARY KEY (guild_id, source_channel_id, target_channel_id)
 );
 """
@@ -58,11 +59,11 @@ async def get_guild_totals(guild_id: int) -> tuple[int, list[tuple[int, int]]]:
 
     return total, [(int(ch), int(cnt)) for ch, cnt in rows]
 
-async def get_translation_targets(guild_id: int, source_channel_id: int) -> list[tuple[int,str]]:
+async def get_translation_targets(guild_id: int, source_channel_id: int) -> list[tuple[int,str, str]]:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             """
-            SELECT target_channel_id, target_lang
+            SELECT target_channel_id, src_lang, dst_lang
             FROM translation_routes
             WHERE guild_id = ? AND source_channel_id = ?
             """,
@@ -71,26 +72,30 @@ async def get_translation_targets(guild_id: int, source_channel_id: int) -> list
         ) as cur:
             rows = await cur.fetchall()
 
-    return [(int(ch_id), lang) for ch_id, lang in rows]
+    return [(int(ch_id), src_lang, dst_lang) for ch_id, src_lang, dst_lang in rows]
 
 async def set_translation_route(
     guild_id: int,
     source_channel_id: int,
     target_channel_id: int,
-    target_lang: str,
+    src_lang: str,
+    dst_lang: str,
 ) -> None:
 
-    target_lang = target_lang.strip().lower()
+    src_lang = src_lang.strip().lower()
+    dst_lang = dst_lang.strip().lower()
 
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
 	    """
-	    INSERT INTO translation_routes (guild_id, source_channel_id, target_channel_id, target_lang)
-	    VALUES (?, ?, ?, ?)
+	    INSERT INTO translation_routes (guild_id, source_channel_id, target_channel_id, src_lang, dst_lang)
+	    VALUES (?, ?, ?, ?, ?)
 	    ON CONFLICT(guild_id, source_channel_id, target_channel_id)
-	    DO UPDATE SET target_lang = excluded.target_lang
+	    DO UPDATE SET 
+                src_lang = excluded.src_lang, 
+                dst_lang = excluded.dst_lang
 	    """,
-            (guild_id, source_channel_id, target_channel_id, target_lang),
+            (guild_id, source_channel_id, target_channel_id, src_lang, dst_lang),
         )
         await db.commit()
 
@@ -110,27 +115,27 @@ async def remove_translation_route(
         await db.commit()
         return cur.rowcount
 
-async def get_translation_targets(guild_id: int, source_channel_id: int) -> list[tuple[int,str]]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            """
-            SELECT target_channel_id, target_lang
-            FROM translation_routes
-            WHERE guild_id = ? AND source_channel_id = ?
-            """,
-            (guild_id, source_channel_id),
+#async def get_translation_targets(guild_id: int, source_channel_id: int) -> list[tuple[int,str]]:
+#    async with aiosqlite.connect(DB_PATH) as db:
+#        async with db.execute(
+#            """
+#            SELECT target_channel_id, target_lang
+#            FROM translation_routes
+#            WHERE guild_id = ? AND source_channel_id = ?
+#            """,
+#            (guild_id, source_channel_id),
 
-        ) as cur:
-            rows = await cur.fetchall()
+#        ) as cur:
+#            rows = await cur.fetchall()
 
-    return [(int(ch_id), lang) for ch_id, lang in rows]
+#    return [(int(ch_id), lang) for ch_id, lang in rows]
 
 
-async def list_translation_routes(guild_id: int) -> list[tuple[int, int, str]]:
+async def list_translation_routes(guild_id: int) -> list[tuple[int, int, str, str]]:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
 	    """
-	    SELECT source_channel_id, target_channel_id, target_lang
+	    SELECT source_channel_id, target_channel_id, src_lang, dst_lang
 	    FROM translation_routes
 	    WHERE guild_id = ?
 	    ORDER BY source_channel_id, target_channel_id
@@ -139,4 +144,4 @@ async def list_translation_routes(guild_id: int) -> list[tuple[int, int, str]]:
         ) as cur:
             rows = await cur.fetchall()
 
-    return [(int(s), int(t), str(lang)) for s, t, lang in rows]
+    return [(int(s), int(t), src_lang, dst_lang) for s, t, src_lang, dst_lang in rows]
