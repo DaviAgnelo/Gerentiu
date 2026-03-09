@@ -24,6 +24,10 @@ src/
 ├── bot.py
 ├── db.py
 └── cogs/
+    └── stats.py
+    ├── moderation.py
+    ├── translation_routes.py
+    └── translation_listener.py
 ```
 ## To use Gerentiu (using Debian in this example)
 
