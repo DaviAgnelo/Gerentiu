@@ -13,6 +13,7 @@ This repository contains the current public development version (v0.3)
 - Server statistics
 - Translation routing (WIP)
 - SQLite database integration
+- Local translation relaying with ArgosTranslate
 
 ---
 
@@ -28,7 +29,7 @@ src/
 
 1. Create virtual environment
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 ```
 3. Install dependencies
@@ -41,7 +42,7 @@ Create a .env file based on .env.example -> DISCORD_TOKEN=your_token_here
 ```
 4. Running the bot
 ```bash
-python src/gerentiu/bot.py
+python3 src/gerentiu/bot.py
 ```
 ## Security Notice
 Never commit or publish your .env file or Discord token.
@@ -49,7 +50,7 @@ Never commit or publish your .env file or Discord token.
 ```markdown
 ## Current Roadmap
 
-- [ ] Local translation engine
+- [x] Local translation engine
 - [ ] API translation fallback
 - [ ] Webhooks for mirrored translation between channels
 - [ ] Docker support
