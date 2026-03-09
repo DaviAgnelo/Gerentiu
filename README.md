@@ -33,12 +33,12 @@ src/
 
 1. Create virtual environment
 ```bash
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 ```
 3. Install dependencies
 ```bash
-pip install -r src/requirements.txt
+pip install -r requirements.txt
 ```
 3. Configure environment variables
 ```bash
@@ -46,7 +46,7 @@ Create a .env file based on .env.example -> DISCORD_TOKEN=your_token_here
 ```
 4. Running the bot
 ```bash
-python3 src/gerentiu/bot.py
+python src/gerentiu/bot.py
 ```
 ## Security Notice
 Never commit or publish your .env file or Discord token.
