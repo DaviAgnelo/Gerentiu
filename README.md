@@ -13,7 +13,8 @@ This repository contains the current public development version (v0.4)
 - Server statistics
 - Translation routing (WIP)
 - SQLite database integration
-- Local translation relaying with ArgosTranslate
+- Local simmetric translation relaying with ArgosTranslate
+- Webhooks integration for mirroring channels
 
 ---
 
@@ -26,8 +27,9 @@ src/
 └── cogs/
     └── stats.py
     ├── moderation.py
-    ├── translation_routes.py
+    ├── translation_pais.py
     └── translation_listener.py
+    └── webhooks_utils.py
 ```
 ## To use Gerentiu (using Debian in this example)
 
@@ -56,7 +58,7 @@ Never commit or publish your .env file or Discord token.
 
 - [x] Local translation engine
 - [ ] API translation fallback
-- [ ] Webhooks for mirrored translation between channels
+- [x] Webhooks for mirrored translation between channels
 - [ ] Docker support
 - [ ] Deployment automation
 - [ ] Expanded administrative tools
