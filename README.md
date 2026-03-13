@@ -2,7 +2,7 @@
 
 Gerentiu is a Discord administrative bot designed to provide moderation tools and translation features (as of now...) for Discord servers.
 
-This repository contains the current public development version (v0.4)
+This repository contains the current public development version (v0.5)
 
 ---
 
