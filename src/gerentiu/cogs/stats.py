@@ -1,7 +1,6 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-
 from gerentiu.db import get_guild_totals
 
 class StatsCog(commands.Cog):
@@ -14,7 +13,11 @@ class StatsCog(commands.Cog):
             await interaction.response.send_message("Use este comando em um servidor.", ephemeral=True)
             return
 
+# Quando o usuário escreve o comando "stats", o bot primeiro verifica se o comando foi feito em um servidor
+
         total, per_channel = await get_guild_totals(interaction.guild.id)
+
+# Exibe somente os top 10 canais
 
         top = per_channel[:10]
         lines = []
@@ -28,6 +31,8 @@ class StatsCog(commands.Cog):
         embed.add_field(name="Top canais", value="\n".join(lines) if lines else "Sem dados ainda.", inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Exibe os canais com o maiot número de mensagens
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(StatsCog(bot))

@@ -14,5 +14,7 @@ def install_lang(from_code: str, to_code: str):
 
 install_lang("en", "pt") #Inglês -> Português
 install_lang("pt", "en") #Portguês -> Inglês
+install_lang("fr", "en") #Francês -> Inglês
+install_lang("en", "fr") #Inglês -> Francês
 
-print(translate.translate("hello world", "en", "pt"))
+print(translate.translate("hello world", "en", "fr"))
