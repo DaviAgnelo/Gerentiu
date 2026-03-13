@@ -2,14 +2,14 @@ import os
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from gerentiu.db import init_db, increment_channel_count, get_translation_targets
+from gerentiu.db import init_db, increment_channel_count
 
 #importa as bibliotecas 'os' e 'discord' para serem utilizadas no codigo
 
 COGS = (
     "gerentiu.cogs.moderation",
     "gerentiu.cogs.stats",
-    "gerentiu.cogs.translation_routes",
+    "gerentiu.cogs.translation_pairs",
     "gerentiu.cogs.translation_listener"
 )
 

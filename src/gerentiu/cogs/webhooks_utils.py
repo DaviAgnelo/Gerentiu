@@ -1,0 +1,76 @@
+import discord
+from io import BytesIO
+
+WEBHOOK_CACHE: dict[int, discord.Webhook] = {}
+
+async def get_or_create_webhook(channel: discord.TextChannel) -> discord.Webhook:
+    cached = WEBHOOK_CACHE.get(channel.id)
+    if cached is not None:
+        return cached
+
+    try:
+        hooks = await channel.webhooks()
+    except discord.Forbidden:
+        raise RUntimeError(f"Sem permissão para listar webhooks no canal {channel.id}")
+
+    for hook in hooks:
+        if hook.name == "Gerentiu Mirror":
+            WEBHOOK_CACHE[channel.id] = hook
+            return hook
+    try:
+        webhook = await channel.create_webhook(name="Gerentiu Mirror")
+    except discord.Forbidden:
+        raise RuntimeError(f"Sem permissão para criar webhook no canal {channel.id}")
+    WEBHOOK_CACHE[channel.id] = webhook
+    return webhook
+
+def safe_webhook_username(user: discord.abc.User | discord.Member) -> str:
+    name = getattr(user, "display_name", None) or user.name
+    name = name.strip()
+    return (name[:80] if len(name) > 80 else name) or "Usuário"
+
+async def build_files_from_attachments(message: discord.Message) -> list[discord.File]:
+    files = []
+
+    for attachment in message.attachments[:10]:
+        data = await attachment.read()
+        fp = BytesIO(data)
+        files.append(discord.File(fp, filename=attachment.filename))
+
+    return files
+
+async def build_reply_context(message: discord.Message) -> str:
+    if message.reference is None or message.reference.message_id is None:
+        return ""
+
+    try:
+        referenced = await message.channel.fetch_message(message.reference.message_id)
+        snippet = referenced.content[:120] if referenced.content else "[anexo/embed]"
+        return f"> **Respondendo a {referenced.author.display_name}:** {snippet}\n"
+    except Exception:
+        return ""
+
+async def mirror_via_webhook(
+    source_message: discord.Message,
+    target_channel: discord.TextChannel,
+    translated_text: str
+) -> None:
+    webhook = await get_or_create_webhook(target_channel)
+    files = await build_files_from_attachments(source_message)
+    reply_context = await build_reply_context(source_message)
+
+    final_content = f"{reply_context}{translated_text}".strip()
+
+    send_kwargs = {
+        "content": final_content or None,
+        "username": safe_webhook_username(source_message.author),
+        "avatar_url": source_message.author.display_avatar.url,
+        "allowed_mentions": discord.AllowedMentions.none(),
+    }
+
+    if files:
+        send_kwargs["files"] = files
+    if not final_content and not files:
+        return
+
+    await webhook.send(**send_kwargs)
