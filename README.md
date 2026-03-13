@@ -11,7 +11,7 @@ This repository contains the current public development version (v0.4)
 - Modular command structure (cogs)
 - Moderation tools
 - Server statistics
-- Translation routing (WIP)
+- Translation routing
 - SQLite database integration
 - Local simmetric translation relaying with ArgosTranslate
 - Webhooks integration for mirroring channels
