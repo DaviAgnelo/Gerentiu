@@ -68,9 +68,14 @@ async def mirror_via_webhook(
         "allowed_mentions": discord.AllowedMentions.none(),
     }
 
+    if source_message.embeds:
+        send_kwargs["embeds"] = source_message.embeds
     if files:
         send_kwargs["files"] = files
-    if not final_content and not files:
+    if not final_content and not files and not source_message.embeds:
         return
-
-    await webhook.send(**send_kwargs)
+    try:
+        await webhook.send(**send_kwargs)
+    except discord.HTTPException:
+        send_kwargs.pop("embeds", None)
+        await webhook(**send_kwargs)
