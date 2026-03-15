@@ -1,9 +1,58 @@
 import asyncio
 import discord
+import re
 from discord.ext import commands
 from argostranslate import translate
 from gerentiu.db import get_translation_pair_by_channel
 from gerentiu.cogs.webhooks_utils import mirror_via_webhook
+
+CUSTOM_EMOJI_RE = re.compile(r'<a?:\w+:\d+>')
+UNICODE_EMOJI_RE = re.compile(
+    r'['
+    r'\U0001F300-\U0001F5FF'
+    r'\U0001F600-\U0001F64F'
+    r'\U0001F680-\U0001F6FF'
+    r'\U0001F700-\U0001F77F'
+    r'\U0001F780-\U0001F7FF'
+    r'\U0001F800-\U0001F8FF'
+    r'\U0001F900-\U0001F9FF'
+    r'\U0001FA00-\U0001FA6F'
+    r'\U0001FA70-\U0001FAFF'
+    r'\u2600-\u26FF'
+    r'\u2700-\u27BF'
+    r']',
+    flags=re.UNICODE
+)
+URL_RE = re.compile(r'http?://\S+')
+MENTION_RE = re.compile(r'<@!?\d+>|<@&\d+>|<#\d+>')
+PLAIN_MENTION_RE = re.compile(r'(?<!\w)@(everyone|here)\b')
+
+def protect_special_tokens(text: str):
+    placeholders = []
+    index = 0
+
+    def make_replacer(prefix):
+        def repl(match):
+            nonlocal index
+            token = f"ZXQ{prefix}{index}QXZ"
+            placeholders.append((token, match.group(0)))
+            index += 1
+            return token
+        return repl
+
+    text = URL_RE.sub(make_replacer("URL"), text)
+    text = MENTION_RE.sub(make_replacer("TAG"), text)
+    text = PLAIN_MENTION_RE.sub(make_replacer("PING"), text)
+    text = CUSTOM_EMOJI_RE.sub(make_replacer("EMJ"), text)
+    text = UNICODE_EMOJI_RE.sub(make_replacer("EMJ"), text)
+
+    return text, placeholders
+
+
+def restore_special_tokens(text: str, placeholders):
+    for token, original in placeholders:
+        text = text.replace(token, original)
+    return text
 
 class TranslationListenerCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -53,30 +102,33 @@ class TranslationListenerCog(commands.Cog):
 #        print(f"[DEBUG] direção: {src_lang} -> {dst_lang} | target_channel_id={target_channel_id}")
 
         text = message.content or ""
+        protected_text, protected_map = protect_special_tokens(text)
+        translated = None
 
 #        translated = f"([DEBUG] {src_lang} <-> {dst_lang}) {text} "
 
         if not text.strip() and not message.attachments:
             return
-
+#        print(f"[DEBUG] original={repr(text)}")
         if self.has_translatable_text(text):
             translated = await asyncio.to_thread(
                 translate.translate,
-                text,
+                protected_text,
                 src_lang,
                 dst_lang
             )
 
             final_text = (translated or "").strip()
+            final_text = restore_special_tokens(final_text, protected_map)
 
             if not final_text:
                 final_text = text
         else:
             final_text = text
 
+#        print(f"[DEBUG] translated={(translated)}")
         target_channel = self.bot.get_channel(target_channel_id)
 
-        target_channel = self.bot.get_channel(target_channel_id)
 #        print(f"[DEBUG] target_channel resolvido: {target_channel}")
         if target_channel:
             await mirror_via_webhook(message, target_channel, final_text)

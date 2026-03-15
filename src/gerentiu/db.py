@@ -138,20 +138,18 @@ async def remove_translation_pair(
     channel_1_id: int,
     channel_2_id: int,
 ) -> int:
-    channel_1_id, channel_2_id, _, _ = _normalize_pair(
-        channel_1_id,
-        channel_2_id,
-        "",
-        "",
-    )
 
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
 	    """
 	    DELETE FROM translation_pairs
-	    WHERE guild_id = ? AND channel_1_id = ? AND channel_2_id = ?
+	    WHERE guild_id = ?
+              AND (
+                    (channel_1_id = ? AND channel_2_id = ?)
+                 OR (channel_1_id = ? AND channel_2_id = ?)
+              )
 	    """,
-            (guild_id, channel_1_id, channel_2_id),
+            (guild_id, channel_1_id, channel_2_id, channel_2_id, channel_1_id),
         )
         await db.commit()
         return cur.rowcount
