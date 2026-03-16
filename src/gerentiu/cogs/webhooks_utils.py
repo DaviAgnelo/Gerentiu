@@ -39,14 +39,37 @@ async def build_files_from_attachments(message: discord.Message) -> list[discord
 
     return files
 
-async def build_reply_context(message: discord.Message) -> str:
+async def build_reply_context(message: discord.Message, src_lang: str, dst_lang: str) -> str:
     if message.reference is None or message.reference.message_id is None:
         return ""
 
     try:
         referenced = await message.channel.fetch_message(message.reference.message_id)
-        snippet = referenced.content[:120] if referenced.content else "[anexo/embed]"
-        return f"> **Respondendo a {referenced.author.display_name}:** {snippet}\n"
+
+        raw_snippet = referenced.content.strip() if referenced.content else "[anexo/embed]"
+        raw_snippet = referenced.content[:120]
+
+        snippet = raw_snippet
+
+        if referenced.content and any(ch.isalnum() for ch in raw_snippet):
+            protected_snippet, protected_map = protect_special_tokens(raw_snippet)
+
+            translated_snippet = await asynco.to_thread(
+                translate.translate,
+                protected_snippet,
+                srx_lang,
+                dst_lang
+            )
+
+            snippet = restore_special_tokens(
+                (translated_snippet or "").strip(),
+                protected_map
+            )
+
+            if not snippet:
+                snippet = raw_snippet
+
+        return f"> **{referenced.author.display_name}**: {snippet}\n"
     except Exception:
         return ""
 
@@ -57,9 +80,8 @@ async def mirror_via_webhook(
 ) -> None:
     webhook = await get_or_create_webhook(target_channel)
     files = await build_files_from_attachments(source_message)
-    reply_context = await build_reply_context(source_message)
 
-    final_content = f"{reply_context}{translated_text}".strip()
+    final_content = translated_text
 
     send_kwargs = {
         "content": final_content or None,

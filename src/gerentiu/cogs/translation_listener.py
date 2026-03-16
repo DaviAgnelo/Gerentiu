@@ -5,6 +5,7 @@ from discord.ext import commands
 from argostranslate import translate
 from gerentiu.db import get_translation_pair_by_channel
 from gerentiu.cogs.webhooks_utils import mirror_via_webhook
+from gerentiu.cogs.nllb_translator import NLLBTranslator
 
 CUSTOM_EMOJI_RE = re.compile(r'<a?:\w+:\d+>')
 UNICODE_EMOJI_RE = re.compile(
@@ -57,8 +58,47 @@ def restore_special_tokens(text: str, placeholders):
 class TranslationListenerCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.translator = NLLBTranslator("models/nllb-200-distilled-600M-int8")
     def has_translatable_text(self, text:str) -> bool:
         return any(ch.isalnum() for ch in text )
+    async def build_reply_context(self, message: discord.Message, src_lang: str, dst_lang: str) -> str:
+        if message.reference is None or message.reference.message_id is None:
+            return ""
+
+        try:
+            referenced = message.reference.resolved
+            if referenced is None or not isinstance(referenced, discord.Message):
+                referenced = await message.channel.fetch_message(message.reference.message_id)
+
+            raw_snippet = referenced.content.strip() if referenced.content else "[anexo|embed]"
+            raw_snippet = raw_snippet[:120]
+
+            protected_snipet, protected_map = protect_special_tokens(raw_snippet)
+
+            try:
+                translated_snippet = await ascyncio.to_thread(
+                    self.translator.translate,
+                    protected_snippet,
+                    src_lang,
+                    dst_lang
+                )
+            except Exception:
+                translated_snippet = await asyncio.to_thread(
+                    translate.translate,
+                    protected_snippet,
+                    src_lang,
+                    dst_lang
+                )
+
+            snippet = restore_special_tokens(
+                (translated_snippet or "").strip(),
+                protected_map
+            ) or raw_snippet
+
+            return f"> **{referenced.author.display_name}**: {snippet}\n"
+
+        except Exception:
+            return
 
 # Filtros básicos para evitar processamento desnecessário
 
@@ -101,6 +141,8 @@ class TranslationListenerCog(commands.Cog):
 
 #        print(f"[DEBUG] direção: {src_lang} -> {dst_lang} | target_channel_id={target_channel_id}")
 
+        reply_context = await self.build_reply_context(message, src_lang, dst_lang)
+
         text = message.content or ""
         protected_text, protected_map = protect_special_tokens(text)
         translated = None
@@ -109,22 +151,32 @@ class TranslationListenerCog(commands.Cog):
 
         if not text.strip() and not message.attachments:
             return
+
 #        print(f"[DEBUG] original={repr(text)}")
+
         if self.has_translatable_text(text):
-            translated = await asyncio.to_thread(
-                translate.translate,
-                protected_text,
-                src_lang,
-                dst_lang
-            )
+            try:
+                translated = await asyncio.to_thread(
+                    self.translator.translate,
+                    protected_text,
+                    src_lang,
+                    dst_lang
+                )
+            except Exception:
+                translated = await asyncio.to_thread(
+                    translate.translate,
+                    protected_text,
+                    src_lang,
+                    dst_lang
+                )
 
-            final_text = (translated or "").strip()
-            final_text = restore_special_tokens(final_text, protected_map)
+        final_text = (translated or "").strip()
+        final_text = restore_special_tokens(final_text, protected_map)
 
-            if not final_text:
-                final_text = text
-        else:
+        if not final_text:
             final_text = text
+        if reply_context:
+            final_text = reply_context + final_text
 
 #        print(f"[DEBUG] translated={(translated)}")
         target_channel = self.bot.get_channel(target_channel_id)
@@ -136,3 +188,4 @@ class TranslationListenerCog(commands.Cog):
 async def setup(bot: commands.Bot):
 #    print("[DEBUG] carregando TranslationLiternerCog")
     await bot.add_cog(TranslationListenerCog(bot))
+
