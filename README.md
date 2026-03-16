@@ -2,7 +2,7 @@
 
 Gerentiu is a Discord administrative bot designed to provide moderation tools and translation features (as of now...) for Discord servers.
 
-This repository contains the current public development version (v0.6)
+This repository contains the current public development version (v0.7)
 
 ---
 
@@ -15,6 +15,7 @@ This repository contains the current public development version (v0.6)
 - SQLite database integration
 - Local simmetric translation relaying with ArgosTranslate
 - Webhooks integration for mirroring channels
+- Better translation with NLLB LLM Localy
 
 ---
 
@@ -28,8 +29,9 @@ src/
     └── stats.py
     ├── moderation.py
     ├── translation_pais.py
+    ├── translation_listener.py
+    ├── webhooks_utils.py
     └── translation_listener.py
-    └── webhooks_utils.py
 ```
 ## To use Gerentiu (using Debian in this example)
 
