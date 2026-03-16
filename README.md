@@ -31,7 +31,8 @@ src/
     ├── translation_pais.py
     ├── translation_listener.py
     ├── webhooks_utils.py
-    └── translation_listener.py
+    ├── translation_listener.py
+    └── nllb_translator.py
 ```
 ## To use Gerentiu (using Debian in this example)
 
