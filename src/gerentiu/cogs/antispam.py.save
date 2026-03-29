@@ -1,0 +1,26 @@
+import discord
+from discord.ext import commands
+from gerentiu.db import get_antispam_config
+
+class AntiSpamCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.user_message_history = defaultdict(lambda: deque(maxlen=15))
+
+    @commands.Cog.listener()
+    async def on_message(self, message, enabled):
+        async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+        if message.author.bot:
+            return
+        if not message.guild:
+            return
+        
+
+    async def get_config(enabled: bool, max_messages: int, interval_seconds: int, action: str):
+
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(AntispamCog(bot))
+#Inicializa o cog de antispam

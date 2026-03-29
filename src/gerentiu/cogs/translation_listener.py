@@ -5,7 +5,7 @@ from discord.ext import commands
 from argostranslate import translate
 from gerentiu.db import get_translation_pair_by_channel
 from gerentiu.cogs.webhooks_utils import mirror_via_webhook
-from gerentiu.cogs.nllb_translator import NLLBTranslator
+#from gerentiu.cogs.nllb_translator import NLLBTranslator
 
 CUSTOM_EMOJI_RE = re.compile(r'<a?:\w+:\d+>')
 UNICODE_EMOJI_RE = re.compile(
@@ -49,6 +49,11 @@ def protect_special_tokens(text: str):
 
     return text, placeholders
 
+def normalize_lang(code: str) -> str:
+    if not code:
+        return ""
+    code = code.lower().strip().replace("_", "-")
+    return code.split("-")[0]
 
 def restore_special_tokens(text: str, placeholders):
     for token, original in placeholders:
@@ -58,7 +63,7 @@ def restore_special_tokens(text: str, placeholders):
 class TranslationListenerCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.translator = NLLBTranslator("models/nllb-200-distilled-600M-int8")
+
     def has_translatable_text(self, text:str) -> bool:
         return any(ch.isalnum() for ch in text )
     async def build_reply_context(self, message: discord.Message, src_lang: str, dst_lang: str) -> str:
@@ -67,28 +72,30 @@ class TranslationListenerCog(commands.Cog):
 
         try:
             referenced = message.reference.resolved
+
             if referenced is None or not isinstance(referenced, discord.Message):
-                referenced = await message.channel.fetch_message(message.reference.message_id)
+                ref_channel = message.channel
+                if getattr(message.reference, "channel_id", None):
+                    ref_channel = self.bot.get_channel(message.reference.channel_id) or message.channel
+
+                referenced = await ref_channel.fetch_message(message.reference.message_id)
 
             raw_snippet = referenced.content.strip() if referenced.content else "[anexo|embed]"
             raw_snippet = raw_snippet[:120]
 
-            protected_snipet, protected_map = protect_special_tokens(raw_snippet)
+            protected_snippet, protected_map = protect_special_tokens(raw_snippet)
 
-            try:
-                translated_snippet = await ascyncio.to_thread(
-                    self.translator.translate,
-                    protected_snippet,
-                    src_lang,
-                    dst_lang
-                )
-            except Exception:
-                translated_snippet = await asyncio.to_thread(
-                    translate.translate,
-                    protected_snippet,
-                    src_lang,
-                    dst_lang
-                )
+            src_lang = normalize_lang(src_lang)
+            dst_lang = normalize_lang(dst_lang)
+
+            translated_snippet = None
+
+            translated_snippet = await asyncio.to_thread(
+                translate.translate,
+                protected_snippet,
+                src_lang,
+                dst_lang
+            )
 
             snippet = restore_special_tokens(
                 (translated_snippet or "").strip(),
@@ -97,15 +104,17 @@ class TranslationListenerCog(commands.Cog):
 
             return f"> **{referenced.author.display_name}**: {snippet}\n"
 
-        except Exception:
-            return
+        except Exception as e:
+            import traceback
+            print(f"Erro em build_reply_context: {e!r}")
+            traceback.print_exc()
+            return ""
 
 # Filtros básicos para evitar processamento desnecessário
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
 #        print("{DEBUG} translation_listener on_message disparou")
-
         if message.author.bot:
             return
         if not message.guild:
@@ -155,20 +164,27 @@ class TranslationListenerCog(commands.Cog):
 #        print(f"[DEBUG] original={repr(text)}")
 
         if self.has_translatable_text(text):
+#            try:
+#                translated = await asyncio.to_thread(
+#                    self.translator.translate,
+#                    protected_text,
+#                    src_lang,
+#                    dst_lang
+#                )
+
+            src_lang = normalize_lang(src_lang)
+            dst_lang = normalize_lang(dst_lang)
+
             try:
-                translated = await asyncio.to_thread(
-                    self.translator.translate,
-                    protected_text,
-                    src_lang,
-                    dst_lang
-                )
-            except Exception:
                 translated = await asyncio.to_thread(
                     translate.translate,
                     protected_text,
                     src_lang,
                     dst_lang
                 )
+            except Exception as e:
+                print(f"Erro na tradução: {e}")
+                translated = None
 
         final_text = (translated or "").strip()
         final_text = restore_special_tokens(final_text, protected_map)

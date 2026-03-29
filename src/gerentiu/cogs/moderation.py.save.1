@@ -27,7 +27,7 @@ class ModerationCog(commands.Cog):
 # Comando teste para verificar se o bot está respondendo
 
     @staticmethod
-    def get_missing_antispam_permissions(guild: discord.Guild) -> list[str]:
+    def get_missing_antispam_permissions(self, guild: discord.Guild) -> list[str]:
         me = guild.me
         if me is None:
             return ["Could not resolve bot member."]
@@ -240,8 +240,7 @@ class ModerationCog(commands.Cog):
         self,
         member: discord.Member,
         action: str,
-        spam_messages: list[discord.Message],
-        channel: discord.abc.Messageable
+        spam_messages: list[discord.Message]
     ):
         if action in {"delete", "timeout", "kick", "ban"}:
             for msg in spam_messages:
@@ -252,25 +251,12 @@ class ModerationCog(commands.Cog):
 
         if action == "warn":
             try:
-                await channel.send(f"{member.mention}, stop flooding the channel. This is a warning.",
-                    delete_after=6
-                )
-            except discord.HTTPException:
-                pass
-
-            try:
-                await member.send("Stop spamming the channel. This is a warning.")
+                await member.send("You have been warned for spamming.")
             except discord.HTTPException:
                 pass
 
         elif action == "delete":
-            try:
-                await channel.send(
-                    f"{member.mention}, your spam messages were removed. Stop flooding the channel.",
-                    delete_after=6
-                )
-            except dsicord.HTTPException:
-                pass
+            pass
 
         elif action == "timeout":
             try:
@@ -279,30 +265,7 @@ class ModerationCog(commands.Cog):
             except discord.HTTPException:
                 pass
 
-            try:
-                await channel.send(
-                    f"{member.mention}, you have been timed out for spamming.",
-                    delete_after=8
-                )
-            except dsicord.HTTPException:
-                pass
-            try:
-                await member.send("You have been timed out for spamming.")
-            except discord.HTTPException:
-                pass
-
         elif action == "kick":
-            try:
-                await member.send("You have been kicked for spamming.")
-            except discord.HTTPException:
-                pass
-            try:
-                await channel.send(
-                    f"{member.mention} was kicked for spamming.",
-                    delete_after=8
-                )
-            except discord.HTTPException:
-                pass
             try:
                 await member.kick(reason="Spam detected")
             except discord.HTTPException:
@@ -310,27 +273,16 @@ class ModerationCog(commands.Cog):
 
         elif action == "ban":
             try:
-                await member.send("You have been banned for spamming.")
-            except discord.HTTPException:
-                pass
-            try:
-                await channel.send(
-                    f"{member.mention} was banned for spamming.",
-                    delete_after=8
-                )
-            except discord.HTTPException:
-                pass
-            try:
                 await member.ban(reason="Spam detected", delete_message_days=0)
             except discord.HTTPException:
                 pass
 
     PUNISHMENT_ORDER = ["warn", "delete", "timeout", "kick", "ban"]
 
-    def resolve_spam_punishment(self, strikes: int, max_punishment: str) -> str:
-        max_index = self.PUNISHMENT_ORDER.index(max_punishment)
+    def resolve_spam_punishment(strikes: int, max_punishment: str) -> str:
+        max_index = PUNISHMENT_ORDER.index(max_punishment)
         strike_index = min(strikes - 1, max_index)
-        return self.PUNISHMENT_ORDER[strike_index]
+        return PUNISHMENT_ORDER[strike_index]
 
     async def handle_spam_detection(
         self,
@@ -348,9 +300,9 @@ class ModerationCog(commands.Cog):
             return
 
         strikes = await increment_antispam_strikes(guild.id, member.id)
-        action = self.resolve_spam_punishment(strikes, config["max_punishment"])
+        action = resolve_spam_punishment(strikes, config["max_punishment"])
 
-        await self.apply_spam_punishment(member, action, spam_messages, message.channel)
+        await self.apply_spam_punishment(member, action, spam_messages)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
