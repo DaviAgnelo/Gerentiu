@@ -10,7 +10,8 @@ COGS = (
     "gerentiu.cogs.moderation",
     "gerentiu.cogs.stats",
     "gerentiu.cogs.translation_pairs",
-    "gerentiu.cogs.translation_listener"
+    "gerentiu.cogs.translation_listener",
+#    "gerentiu.cogs.antispam"
 )
 
 #modulos separados do bot (cogs). Sendo moderation e stats no momento. Eles sao carregados

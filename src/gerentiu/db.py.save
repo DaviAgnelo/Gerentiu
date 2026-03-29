@@ -24,28 +24,18 @@ CREATE TABLE IF NOT EXISTS translation_pairs (
 );
 
 CREATE TABLE IF NOT EXISTS antispam_config (
-    guild_id INTERGER PRIMARY KEY,
+    guild_id INTERGET PRIMARY KEY,
     enabled INTERGER NOT NULL DEFAULT 0,
     max_messages INTERGER NOT NULL DEFAULT 5,
-    max_punishment TEXT NOT NULL DEFAULT 'timeout',
-    interval_seconds INTERGER NOT NULL DEFAULT 8
+    interval_seconds INTERGER NOT NULL DEFAULT 8,
 );
 
 CREATE TABLE IF NOT EXISTS antispam_punishments (
-    guild_id INTERGER NOT NULL,
+    guild_id INTERGET INTERGER NOT NULL,
     strike_count INTERGER NOT NULL,
-    action TEXT NOT NULL,
-    timeout_seconds INTERGER,
-    PRIMARY KEY (guild_id, strike_count)
-);
-
-CREATE TABLE IF NOT EXISTS antispam_violations (
-    guild_id INTERGER NOT NULL,
-    user_id INTERGER NOT NULL,
-    strikes INTERGER NOT NULL DEFAULT 0,
-    last_violation_at INTERGER,
-    PRIMARY KEY (guild_id, user_id)
-);
+    
+    max_messages INTERGER NOT NULL DEFAULT 5,
+    interval_seconds INTERGER NOT NULL DEFAULT 8,
 """
 
 def _normalize_pair(
@@ -63,15 +53,6 @@ def _normalize_pair(
 async def init_db() -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(CREATE_TABLES_SQL)
-
-        try:
-            await db.execute("""
-                ALTER TABLE antispam_config
-                ADD COLUMN max_punishment TEXT NOT NULL DEFAULT 'timeout'
-            """)
-        except aiosqlite.OperationalError:
-            pass
-
         await db.commit()
 
 #Aqui, os comandos SQL citados anteriormente são executados na base de dados
@@ -220,7 +201,7 @@ async def set_antispam_enabled(guild_id: int, enabled: bool):
 async def get_antispam_config(guild_id: int) -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("""
-            SELECT enabled, max_messages, interval_seconds, max_punishment
+            SELECT enabled, max_messages, interval_seconds, action
             FROM antispam_config
             WHERE guild_id = ?
         """, (guild_id,))
@@ -231,18 +212,18 @@ async def get_antispam_config(guild_id: int) -> dict:
             "enabled": False,
             "max_messages": 5,
             "interval_seconds": 8,
-            "max_punishment": "timeout"
+            "action": "warn"
         }
     return {
         "enabled": bool(row[0]),
         "max_messages": row[1],
         "interval_seconds": row[2],
-        "max_punishment": row[3]
+        "action": row[3]
     }
 
 async def set_antispam_max_messages(guild_id, value):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+        cursor = await db.execute("""
         INSERT INTO antispam_config (guild_id, max_messages)
         VALUES (?, ?)
         ON CONFLICT(guild_id) DO UPDATE SET
@@ -260,39 +241,12 @@ async def set_antispam_interval_seconds(guild_id: int, value: int):
              """, (guild_id, value))
          await db.commit()
 
-async def set_antispam_max_punishment(guild_id: int, action: str):
+async def set_antispam_action(guild_id: int, value: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-            INSERT INTO antispam_config (guild_id, max_punishment)
+            INSERT INTO antispam_config (guild_id, action)
             VALUES (?, ?)
             ON CONFLICT(guild_id) DO UPDATE SET
-                max_punishment = excluded.max_punishment
-            """, (guild_id, action))
+                action = excluded.action
+            """, (guild_id, value))
         await db.commit()
-
-async def get_antispam_strikes(guild_id: int, user_id: int) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("""
-            SELECT strikes
-            FROM antispam_violations
-            WHERE guild_id = ? AND user_id = ?
-        """, (guild_id, user_id)) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else 0
-
-async def set_antispam_strikes(guild_id: int, user_id: int, strikes: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            INSERT INTO antispam_violations (guild_id, user_id, strikes)
-            VALUES (?, ?, ?)
-            ON CONFLICT(guild_id, user_id) DO UPDATE SET
-                strikes = excluded.strikes
-        """, (guild_id, user_id, strikes))
-        await db.commit()
-
-async def increment_antispam_strikes(guild_id: int, user_id: int) -> int:
-    current = await get_antispam_strikes(guild_id, user_id)
-    new_value = current + 1
-    await set_antispam_strikes(guild_id, user_id, new_value)
-    return new_value
-
