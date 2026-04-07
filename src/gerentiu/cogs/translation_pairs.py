@@ -3,6 +3,19 @@ from discord import app_commands
 from discord.ext import commands
 from gerentiu.db import set_translation_pair, remove_translation_pair, list_translation_pairs
 
+LANG_NAMES = {
+    "pt": "Português BR",
+    "en": "English US",
+    "fr": "French FR",
+    "de": "German DE",
+    "ko": "Korean KR",
+    "es": "Spanish ES",
+    "zh": "Chinese CN",
+    "ja": "Japanese JP",
+    "ru": "Russian RU",
+    "it": "Italian IT",
+    "hi": "Hindi IN",
+}
 
 def _is_admin(interaction: discord.Interaction) -> bool:
 # Requer permissão de gerenciar servidor ou Manage Channels
@@ -21,9 +34,35 @@ class TranslateRoutesCog(commands.Cog):
     @app_commands.command(name="tr_add", description="Adiciona um par de tradução automática entre os dois canais.")
     @app_commands.describe(
         channel_1="Canal 1 (Com seu idioma configurado)",
-        channel_2="Canal 2 (Com o segundo idioma configurado)",
-        lang_1="Idioma do canal 1 (ex: en, pt, es, fr)",
-        lang_2="Idioma do canal 2 (ex: en, pt, es, fr)",
+        channel_2="Canal 2 (Com o segundo idioma configurado)"
+    )
+    @app_commands.choices(
+        lang_1=[
+            app_commands.Choice(name="Portuguese", value="pt"),
+            app_commands.Choice(name="English", value="en"),
+            app_commands.Choice(name="French", value="fr"),
+            app_commands.Choice(name="German", value="de"),
+            app_commands.Choice(name="Korean", value="ko"),
+            app_commands.Choice(name="Spanish", value="es"),
+            app_commands.Choice(name="Chinese", value="zh"),
+            app_commands.Choice(name="Japanese", value="ja"),
+            app_commands.Choice(name="Russian", value="ru"),
+            app_commands.Choice(name="Italian", value="it"),
+            app_commands.Choice(name="Hindi", value="hi"),
+        ],
+        lang_2=[
+            app_commands.Choice(name="Portuguese", value="pt"),
+            app_commands.Choice(name="English", value="en"),
+            app_commands.Choice(name="French", value="fr"),
+            app_commands.Choice(name="German", value="de"),
+            app_commands.Choice(name="Korean", value="ko"),
+            app_commands.Choice(name="Spanish", value="es"),
+            app_commands.Choice(name="Chinese", value="zh"),
+            app_commands.Choice(name="Japanese", value="ja"),
+            app_commands.Choice(name="Russian", value="ru"),
+            app_commands.Choice(name="Italian", value="it"),
+            app_commands.Choice(name="Hindi", value="hi"),
+        ]
     )
 
 # Filtra comandos do usuário que podem dar problema
@@ -38,14 +77,30 @@ class TranslateRoutesCog(commands.Cog):
         if channel_1.id == channel_2.id:
             await interaction.response.send_message("Os canais não podem ser o mesmo canal.", ephemeral=True)
             return
+        if "es" in (lang_1, lang_2):
+            await interaction.response.send_message(
+                """The spanish language is currently disabled for maintenance,
+                please be patient as it will be fixed. Thank you for your comprehension.
+                """,
+                ephemeral=True)
+            return
+        if lang_1 not in LANG_NAMES or lang_2 not in LANG_NAMES:
+            await interaction.response.send_message(
+                "Idioma inválido.",
+                ephemeral=True,
+            )
+            return
 
 # Cria a rota baseado no canal de origem e destino, junto dos idiomas de origem e destino
-        lang_1 = lang_1.lower().strip()
-        lang_2 = lang_2.lower().strip()
+
+        lang_1_name = LANG_NAMES.get(lang_1, lang_1)
+        lang_2_name = LANG_NAMES.get(lang_2, lang_2)
 
         await set_translation_pair(interaction.guild.id, channel_1.id, channel_2.id, lang_1, lang_2)
         await interaction.response.send_message(
-            f"✅ Rota criada: {channel_1.mention} <-> {channel_2.mention} (lang_1: `{lang_1}` (lang_2: `{lang_2}`)",
+            f"✅ Rota criada\n" 
+            f"{channel_1.mention} <-> {channel_2.mention}\n"
+            f"{lang_1_name} <-> {lang_2_name}",
             ephemeral=True,
         )
 

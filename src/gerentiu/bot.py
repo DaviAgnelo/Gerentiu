@@ -11,7 +11,7 @@ COGS = (
     "gerentiu.cogs.stats",
     "gerentiu.cogs.translation_pairs",
     "gerentiu.cogs.translation_listener",
-#    "gerentiu.cogs.antispam"
+    "gerentiu.cogs.help"
 )
 
 #modulos separados do bot (cogs). Sendo moderation e stats no momento. Eles sao carregados

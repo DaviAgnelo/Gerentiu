@@ -1,0 +1,122 @@
+import discord
+from discord.ext import commands
+from discord import app_commands
+
+
+
+class MainSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Translation", value="translation"),
+            discord.SelectOption(label="Antispam", value="antispam"),
+        ]
+
+        super().__init__(
+            placeholder="Choose a system...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        choice = self.values[0]
+
+
+        view = SubView(choice)
+        await interaction.response.edit_message(
+            content=f"Selected: {choice}\nNow choose an option:",
+            view=view
+        )
+
+
+class SubSelect(discord.ui.Select):
+    def __init__(self, category: str):
+        self.category = category
+
+        options = [
+            discord.SelectOption(label="How to config", value="config"),
+            discord.SelectOption(label="How it works", value="works"),
+            discord.SelectOption(label="How to remove", value="remove"),
+        ]
+
+        super().__init__(
+            placeholder="Choose an action...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        action = self.values[0]
+
+        HELP_DATA = {
+            "translation": {
+                "config": """🧐 Type /tr_add on any text channel on your Discord server
+                    Then select your desired pair of channels and language for each channel🖥️
+                    """",
+                "works": """🧐 The translation systems works by having Gerentiu grab the messages sent on a channel
+                    (no messages are saved! Just used for translation!),then, Gerentiu will see if that channels
+                    is configured to be translated to another language and be sent to another text channel
+                    if it is, it uses ArgosTranslate to make the translation and sends it to the channel configured
+                    to be the mirror channel, then some Webhook magic is used to copy the message author profile picture
+                    and name, so both channels seem as though they are the same. Gerentiu uses some of that Webhook magic
+                    to mirror images, emojis and other stuff aswell, making both channels very identical with each other, but
+                    with the difference being that one channel may be in english and the other in portuguse! Fantastic!😎
+                    """,
+                "remove": "🧐 Type /r_remove the translation betwoeen two channels."
+            },
+            "antispam": {
+                "config": """🧐 Type /antispam on any text channel on you Discord serve
+                    it will display all the options sbout antispam, like status,
+                    enable, max_messages, disable, max and interval_seconds.
+                    """,
+                "works": """🧐 It's a system that detects spam on text channels based on messages per second
+                    📊  The "status" command displays if it is enable on your server and how many messages are permitted .
+                    """,
+                "remove": "🧐 Use /antispam disable para desativar."
+            }
+        }
+
+        embed = discord.Embed(
+            title=f"{self.category.capitalize()} - {action}",
+            description=HELP_DATA[self.category][action],
+            color=discord.Color.blue()
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=None
+        )
+
+        await interaction.response.edit_message(
+            content=response,
+            view=None
+        )
+
+class MainView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+        self.add_item(MainSelect())
+
+
+class SubView(discord.ui.View):
+    def __init__(self, category: str):
+        super().__init__(timeout=60)
+        self.add_item(SubSelect(category))
+
+
+class HelpCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="help", description="Interactive help menu")
+    async def help_command(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            "Choose a system:",
+            view=MainView(),
+            ephemeral=True
+        )
+
+
+async def setup(bot):
+    await bot.add_cog(HelpCog(bot))

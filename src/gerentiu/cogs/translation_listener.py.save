@@ -218,8 +218,6 @@ class TranslationListenerCog(commands.Cog):
         if pair is None:
             return
 
-# Depois dos filtros, é feito a tradução baseado em quais idiomas são a fonte e destino, enviando o autor e a mensagem traduzida
-# no canal de destino
 
         ch1, ch2, lang_1, lang_2 = pair
 

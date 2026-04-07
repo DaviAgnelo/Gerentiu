@@ -11,7 +11,7 @@ async def get_or_create_webhook(channel: discord.TextChannel) -> discord.Webhook
     try:
         hooks = await channel.webhooks()
     except discord.Forbidden:
-        raise RUntimeError(f"Sem permissão para listar webhooks no canal {channel.id}")
+        raise RuntimeError(f"Sem permissão para listar webhooks no canal {channel.id}")
 
     for hook in hooks:
         if hook.name == "Gerentiu Mirror":
@@ -46,8 +46,7 @@ async def build_reply_context(message: discord.Message, src_lang: str, dst_lang:
     try:
         referenced = await message.channel.fetch_message(message.reference.message_id)
 
-        raw_snippet = referenced.content.strip() if referenced.content else "[anexo/embed]"
-        raw_snippet = referenced.content[:120]
+        raw_snippet = referenced.content[:120].strip() if referenced.content else "[anexo/embed]"
 
         snippet = raw_snippet
 
@@ -100,4 +99,4 @@ async def mirror_via_webhook(
         await webhook.send(**send_kwargs)
     except discord.HTTPException:
         send_kwargs.pop("embeds", None)
-        await webhook(**send_kwargs)
+        await webhook.send(**send_kwargs)
