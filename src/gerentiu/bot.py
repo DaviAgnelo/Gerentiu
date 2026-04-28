@@ -9,7 +9,7 @@ from gerentiu.db import init_db, increment_channel_count
 COGS = (
     "gerentiu.cogs.moderation",
     "gerentiu.cogs.stats",
-    "gerentiu.cogs.translation_pairs",
+    "gerentiu.cogs.translation_hubs",
     "gerentiu.cogs.translation_listener",
     "gerentiu.cogs.help"
 )

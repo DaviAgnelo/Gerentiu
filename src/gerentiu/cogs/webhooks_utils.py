@@ -39,39 +39,6 @@ async def build_files_from_attachments(message: discord.Message) -> list[discord
 
     return files
 
-async def build_reply_context(message: discord.Message, src_lang: str, dst_lang: str) -> str:
-    if message.reference is None or message.reference.message_id is None:
-        return ""
-
-    try:
-        referenced = await message.channel.fetch_message(message.reference.message_id)
-
-        raw_snippet = referenced.content[:120].strip() if referenced.content else "[anexo/embed]"
-
-        snippet = raw_snippet
-
-        if referenced.content and any(ch.isalnum() for ch in raw_snippet):
-            protected_snippet, protected_map = protect_special_tokens(raw_snippet)
-
-            translated_snippet = await asynco.to_thread(
-                translate.translate,
-                protected_snippet,
-                srx_lang,
-                dst_lang
-            )
-
-            snippet = restore_special_tokens(
-                (translated_snippet or "").strip(),
-                protected_map
-            )
-
-            if not snippet:
-                snippet = raw_snippet
-
-        return f"> **{referenced.author.display_name}**: {snippet}\n"
-    except Exception:
-        return ""
-
 async def mirror_via_webhook(
     source_message: discord.Message,
     target_channel: discord.TextChannel,
@@ -98,5 +65,8 @@ async def mirror_via_webhook(
     try:
         await webhook.send(**send_kwargs)
     except discord.HTTPException:
+        WEBHOOK_CACHE.pop(target_channel.id, None)
+
+        webhook = await get_or_create_webhook(target_channel)
         send_kwargs.pop("embeds", None)
         await webhook.send(**send_kwargs)

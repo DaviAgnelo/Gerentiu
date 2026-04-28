@@ -3,8 +3,9 @@ import discord
 import re
 from discord.ext import commands
 from argostranslate import translate
-from gerentiu.db import get_translation_pair_by_channel
+from gerentiu.db import get_translation_hub_by_channel
 from gerentiu.cogs.webhooks_utils import mirror_via_webhook
+from collections import defaultdict
 #from gerentiu.cogs.nllb_translator import NLLBTranslator
 
 CUSTOM_EMOJI_RE = re.compile(r'<a?:\w+:\d+>')
@@ -67,6 +68,9 @@ def protect_special_tokens(text:str):
     return text, placeholders
 #This is the function called when needs_special_token_protection flags a message as containing special tokens
 
+def normalize_lang(lang: str) -> str:
+    return (lang or "").strip().lower()
+
 def restore_special_tokens(text: str, placeholders):
     for token, original in reversed(placeholders):
         text = text.replace(token, original)
@@ -76,39 +80,51 @@ def restore_special_tokens(text: str, placeholders):
 class TranslationListenerCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.translation_pair_cache = {}
+        self.translation_hub_cache = {}
 #Now comes the fun part
 
-    async def get_cached_pair(self, guild_id: int, channel_id: int):
+    async def get_cached_hub(self, guild_id: int, channel_id: int):
         key = (guild_id, channel_id)
 
-        if key in self.translation_pair_cache:
-            return self.translation_pair_cache[key]
+        if key in self.translation_hub_cache:
+            return self.translation_hub_cache[key]
 
-        pair = await get_translation_pair_by_channel(guild_id, channel_id)
-        if pair is not None:
-            ch1, ch2, lang_1, lang_2 = pair
-            pair = (int(ch1), int(ch2), lang_1, lang_2)
+        hub = await get_translation_hub_by_channel(guild_id, channel_id)
 
-        self.translation_pair_cache[key] = pair
-        return pair
+        if hub is not None:
+            hub = {
+                "hub_id": int(hub["hub_id"]),
+                "hub_name": hub["hub_name"],
+                "source_channel_id": int(hub["source_channel_id"]),
+                "source_language": hub["source_language"],
+                "targets": [
+                    {
+                        "channel_id": int(target["channel_id"]),
+                        "language": target["language"],
+                    }
+                    for target in hub["targets"]
+                ],
+            }
+
+        self.translation_hub_cache[key] = hub
+        return hub
 #This whole function's duty is to speed up translation by not needing to consult the DB every time someone sends
 #a message, just be careful to remove it from cache if the pair was removed
 
-    def invalidate_translation_cache(self, guild_id: int, channel_ids: list[int] | None = None):
+    def invalidate_translation_hub_cache(self, guild_id: int, channel_ids: list[int] | None = None):
         if channel_ids is None:
             keys_to_remove = [
-                key for key in self.translation_pair_cache
+                key for key in self.translation_hub_cache
                 if key[0] == guild_id
             ]
         else:
             channel_ids = set(channel_ids)
             keys_to_remove = [
-                key for key in self.translation_pair_cache
+                key for key in self.translation_hub_cache
                 if key[0] == guild_id and key[1] in channel_ids
             ]
         for key in keys_to_remove:
-            self.translation_pair_cache.pop(key, None)
+            self.translation_hub_cache.pop(key, None)
 #This is what I was talking about before, no bugs shall prevail today! (Only every day foward from tomorrow)
 
     def has_translatable_text(self, text:str) -> bool:
@@ -198,51 +214,36 @@ class TranslationListenerCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-#        print("{DEBUG} translation_listener on_message disparou")
         if message.author.bot:
             return
-        if message.webhook_id is not None:
+        if message.webhook_id:
             return
         if not message.guild:
             return
-#Don't mirror bots, private message and webhooks
-        content = message.content
+
+        content = message.content or ""
         attachments = message.attachments
 
         if not content and not attachments:
             return
+
         if not attachments and not self.has_translatable_text(content) and not needs_special_token_protection(content):
             return
-        pair = await self.get_cached_pair(message.guild.id, message.channel.id)
-#        print(f"[DEBUG] pair encontrado: {pair}")
-        if pair is None:
+
+        hub = await self.get_cached_hub(message.guild.id, message.channel.id)
+        if hub is None:
             return
 
-# Depois dos filtros, é feito a tradução baseado em quais idiomas são a fonte e destino, enviando o autor e a mensagem traduzida
-# no canal de destino
+        source_channel_id = hub["source_channel_id"]
+        source_language = normalize_lang(hub["source_language"])
+        targets = hub["targets"]
 
-        ch1, ch2, lang_1, lang_2 = pair
-
-#        print(f"[DEBUG] message.channel.id={message.channel.id} ({type(message.channel.id)}")
-#        print(f"[DEBUG] ch1={ch1} ({type(ch1)}) | ch2={ch2} ({type(ch2)})")
-
-        if message.channel.id == ch1:
-            target_channel_id = ch2
-            src_lang = lang_1
-            dst_lang = lang_2
-        elif message.channel.id == ch2:
-            target_channel_id = ch1
-            src_lang = lang_2
-            dst_lang = lang_1
-        else:
-#            print("[DEBUG] caiu no else: channel.id não bateu com ch1, nem ch2")
+        if message.channel.id != source_channel_id:
             return
 
-#        print(f"[DEBUG] direção: {src_lang} -> {dst_lang} | target_channel_id={target_channel_id}")
-        reply_context = ""
+        if not targets:
+            return
 
-        if message.reference and message.reference.message_id:
-            reply_context = await self.build_reply_context(message, src_lang, dst_lang)
         text = message.content or ""
 
         if needs_special_token_protection(text):
@@ -250,46 +251,53 @@ class TranslationListenerCog(commands.Cog):
         else:
             protected_text, protected_map = text, []
 
-        translated = None
+        targets_by_lang = defaultdict(list)
 
-#        translated = f"([DEBUG] {src_lang} <-> {dst_lang}) {text} "
-#        print(f"[DEBUG] original={repr(text)}")
+        for target in targets:
+            lang = normalize_lang(target["language"])
+            targets_by_lang[lang].append(int(target["channel_id"]))
 
-        if self.has_translatable_text(text):
-            src_lang = normalize_lang(src_lang)
-            dst_lang = normalize_lang(dst_lang)
-
-            try:
-                translated = await asyncio.to_thread(
-                    translate.translate,
-                    protected_text,
-                    src_lang,
-                    dst_lang
+        for dst_lang, channel_ids in targets_by_lang.items():
+            reply_context = ""
+            if message.reference and message.reference.message_id:
+                reply_context = await self.build_reply_context(
+                    message,
+                    source_language,
+                    dst_lang,
                 )
-            except Exception as e:
-                print(f"Erro na tradução: {e}")
-                translated = None
 
-        final_text = (translated or "").strip()
-        final_text = restore_special_tokens(final_text, protected_map)
+            translated = None
 
-        if not final_text:
-            final_text = text
-        if reply_context:
-            final_text = f"{reply_context}\n{final_text}"
+            if self.has_translatable_text(text) and source_language and dst_lang and source_language != dst_lang:
+                try:
+                    translated = await asyncio.to_thread(
+                        translate.translate,
+                        protected_text,
+                        source_language,
+                        dst_lang
+                    )
+                except Exception as e:
+                    print(f"Erro na tradução ({source_language} -> {dst_lang}): {e}")
+                    translated = None
 
-#        print(f"[DEBUG] translated={(translated)}")
-        target_channel = self.bot.get_channel(target_channel_id)
+            final_text = (translated or "").strip()
+            final_text = restore_special_tokens(final_text, protected_map)
 
-#        print(f"[DEBUG] target_channel resolvido: {target_channel}")
-        if target_channel:
-#            print(f"[DEBUG] len(text)={len(text or '')}")
-#            print(f"[DEBUG] len(translated)={len(translated or '')}")
-#            print(f"[DEBUG] len(reply_context)={len(reply_context or '')}")
-#            print(f"[DEBUG] len(final_text)={len(final_text or '')}")
-#            print(f"[DEBUG] final_text repr={repr(final_text[:500])}")
-            await mirror_via_webhook(message, target_channel, final_text)
+            if not final_text:
+                final_text = final_text or text
 
+            if reply_context:
+                if final_text:
+                    final_text = f"{reply_context}\n{final_text}"
+                else:
+                    final_text = reply_context
+
+            for target_channel_id in channel_ids:
+                target_channel = self.bot.get_channel(target_channel_id)
+                if target_channel is None:
+                    continue
+
+                await mirror_via_webhook(message, target_channel, final_text)
 async def setup(bot: commands.Bot):
 #    print("[DEBUG] carregando TranslationLiternerCog")
     await bot.add_cog(TranslationListenerCog(bot))
