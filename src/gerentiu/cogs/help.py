@@ -6,23 +6,26 @@ from discord.ext import commands
 HELP_DATA = {
     "translation": {
         "config": (
-            """ Type `/tr_add` in any text channel on your Discord server and choose the
-            channels you want to mirror, then choose the language you want for each
-            channel in a list.
+            """ Type 'hub_create' on any text channel on your sever, then type the name of the translation
+            hub you want to create, it will have an ID number, save it for future use. You can use the command
+            '/hub_list' to see whice translation hubs you have on your server and their respective ID number.
+            Now, you can add a text channel to your translation hub using '/hub_add', you will need to set
+            the ID number of the hub to add your text channel and the language in which the text channel is
+            being used.
         """
         ),
         "works": (
             """
             Gerentiu gets the message sent on a text channel and verifies if it's on a
-            translation pair, if it's not, he just throws it away (No messages are saved!
+            translation hub, if it's not, he just throws it away (No messages are saved!
             Privacy!). If it is, then he translates it using ArgosTranslate and does some
             Webhook magic (Uuuhh) and sends it as if it is the message author, with profile
             picture and name! He mirrors images, emojis, gifs and other stuff aswell. Fantastic
         """
         ),
         "remove":
-             """Type `/tr_remove` in any text channel on your Discord server and choose the
-             pair of channels you wish to remove.
+             """Type `/hub_remove` in any text channel on your Discord server and choose the
+             text channel you wish to remove from a certain hub.
              """
     },
     "antispam": {

@@ -161,7 +161,7 @@ class ModerationCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def max_messages(self, interaction: discord.Interaction, value: int):
         if interaction.guild is None:
-            await interaction.reponse.send_message(
+            await interaction.response.send_message(
                 f"This can only be used on servers.",
                 ephemeral=True
             )
@@ -192,7 +192,7 @@ class ModerationCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def interval_seconds(self, interaction: discord.Interaction, value: int):
         if interaction.guild is None:
-            await interaction.reponse.send_message(
+            await interaction.response.send_message(
                 f"This can only be used on servers.",
                 ephemeral=True
             )
@@ -269,7 +269,7 @@ class ModerationCog(commands.Cog):
                     f"{member.mention}, your spam messages were removed. Stop flooding the channel.",
                     delete_after=6
                 )
-            except dsicord.HTTPException:
+            except discord.HTTPException:
                 pass
 
         elif action == "timeout":
@@ -284,7 +284,7 @@ class ModerationCog(commands.Cog):
                     f"{member.mention}, you have been timed out for spamming.",
                     delete_after=8
                 )
-            except dsicord.HTTPException:
+            except discord.HTTPException:
                 pass
             try:
                 await member.send("You have been timed out for spamming.")
