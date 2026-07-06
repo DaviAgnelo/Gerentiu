@@ -16,6 +16,8 @@ This repository contains the current public development version (v1.0)
 - Local simmetric translation relaying with ArgosTranslate
 - Webhooks integration for mirroring channels
 - Antispam system for server moderation
+- Antiraid system
+- Configuration Panel for ease of use
 
 ---
 
