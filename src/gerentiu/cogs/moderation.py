@@ -1,6 +1,8 @@
 import discord
 import datetime
+import re
 import time
+from urllib.parse import urlsplit, urlunsplit
 from discord import app_commands
 from discord.ext import commands
 from gerentiu.db import (
@@ -13,9 +15,21 @@ from gerentiu.db import (
 )
 from collections import defaultdict, deque
 
+URL_RE = re.compile(
+    r"(?:(?:https?://|www\.)[^\s<>()]+|(?:discord\.gg|discord(?:app)?\.com/invite)/[^\s<>()]+)",
+    re.IGNORECASE
+)
+WHITESPACE_RE = re.compile(r"\s+")
+ZERO_WIDTH_CHARS = "\u200b\u200c\u200d\ufeff"
+TRAILING_URL_PUNCTUATION = ".,!?;:)]}>\"'"
+
 class ModerationCog(commands.Cog):
+    CROSS_CHANNEL_MIN_CHANNELS = 2
+    MIN_DUPLICATE_TEXT_LENGTH = 12
+
     def __init__(self, bot: commands.Bot):
         self.message_history = defaultdict(deque)
+        self.cross_channel_history = defaultdict(deque)
         self.bot = bot
 
 # Cria a classe Moderation para montar o cog "Moderation"
@@ -126,6 +140,11 @@ class ModerationCog(commands.Cog):
         embed.add_field(name="Max messages", value=str(config["max_messages"]), inline=True)
         embed.add_field(name="Intervals", value=str(config["interval_seconds"]), inline=True)
         embed.add_field(name="Max punishment", value=config["max_punishment"], inline=True)
+        embed.add_field(
+            name="Cross-channel protection",
+            value="Same links and repeated messages across channels",
+            inline=False
+        )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -243,30 +262,32 @@ class ModerationCog(commands.Cog):
         spam_messages: list[discord.Message],
         channel: discord.abc.Messageable
     ):
-        if action in {"delete", "timeout", "kick", "ban"}:
-            for msg in spam_messages:
-                try:
-                    await msg.delete()
-                except discord.HTTPException:
-                    pass
+        spam_messages = self.unique_messages(spam_messages)
+
+        for msg in spam_messages:
+            try:
+                await msg.delete()
+            except discord.HTTPException:
+                pass
 
         if action == "warn":
             try:
-                await channel.send(f"{member.mention}, stop flooding the channel. This is a warning.",
+                await channel.send(
+                    f"{member.mention}, your spam messages were removed. Stop flooding the server. This is a warning.",
                     delete_after=6
                 )
             except discord.HTTPException:
                 pass
 
             try:
-                await member.send("Stop spamming the channel. This is a warning.")
+                await member.send("Your spam messages were removed. Stop spamming the server. This is a warning.")
             except discord.HTTPException:
                 pass
 
         elif action == "delete":
             try:
                 await channel.send(
-                    f"{member.mention}, your spam messages were removed. Stop flooding the channel.",
+                    f"{member.mention}, your spam messages were removed. Stop flooding the server.",
                     delete_after=6
                 )
             except discord.HTTPException:
@@ -328,9 +349,94 @@ class ModerationCog(commands.Cog):
     PUNISHMENT_ORDER = ["warn", "delete", "timeout", "kick", "ban"]
 
     def resolve_spam_punishment(self, strikes: int, max_punishment: str) -> str:
+        if max_punishment not in self.PUNISHMENT_ORDER:
+            max_punishment = "timeout"
+
         max_index = self.PUNISHMENT_ORDER.index(max_punishment)
         strike_index = min(strikes - 1, max_index)
         return self.PUNISHMENT_ORDER[strike_index]
+
+    @staticmethod
+    def unique_messages(messages: list[discord.Message]) -> list[discord.Message]:
+        seen = set()
+        unique = []
+
+        for message in messages:
+            message_id = getattr(message, "id", None)
+            message_key = message_id if message_id is not None else id(message)
+
+            if message_key in seen:
+                continue
+
+            seen.add(message_key)
+            unique.append(message)
+
+        return unique
+
+    @staticmethod
+    def normalize_message_text(content: str) -> str:
+        content = (content or "").casefold().strip()
+
+        for char in ZERO_WIDTH_CHARS:
+            content = content.replace(char, "")
+
+        return WHITESPACE_RE.sub(" ", content)
+
+    @classmethod
+    def normalize_url(cls, raw_url: str) -> str:
+        raw_url = raw_url.strip().rstrip(TRAILING_URL_PUNCTUATION)
+
+        lowered_url = raw_url.casefold()
+
+        if lowered_url.startswith("www."):
+            raw_url = "https://" + raw_url
+        elif lowered_url.startswith(("discord.gg/", "discord.com/invite/", "discordapp.com/invite/")):
+            raw_url = "https://" + raw_url
+
+        parsed = urlsplit(raw_url)
+        scheme = parsed.scheme.casefold() or "https"
+        netloc = parsed.netloc.casefold()
+        path = parsed.path.rstrip("/")
+        query = parsed.query
+
+        return urlunsplit((scheme, netloc, path, query, ""))
+
+    @classmethod
+    def extract_urls(cls, content: str) -> list[str]:
+        urls = []
+
+        for match in URL_RE.finditer(content or ""):
+            normalized = cls.normalize_url(match.group(0))
+            if normalized:
+                urls.append(normalized)
+
+        return urls
+
+    @classmethod
+    def build_spam_fingerprints(cls, message: discord.Message) -> set[tuple[str, str]]:
+        content = message.content or ""
+        fingerprints = {
+            ("url", url)
+            for url in cls.extract_urls(content)
+        }
+
+        normalized_text = cls.normalize_message_text(content)
+        if len(normalized_text) >= cls.MIN_DUPLICATE_TEXT_LENGTH:
+            fingerprints.add(("text", normalized_text))
+
+        return fingerprints
+
+    @staticmethod
+    def prune_history(history: deque, now: float, interval_seconds: int):
+        while history and now - history[0]["created_at"] > interval_seconds:
+            history.popleft()
+
+    @staticmethod
+    def cross_channel_threshold(fingerprint_type: str, max_messages: int) -> int:
+        if fingerprint_type == "url":
+            return max(2, min(max_messages, 3))
+
+        return max(2, min(max_messages, 4))
 
     async def handle_spam_detection(
         self,
@@ -364,7 +470,7 @@ class ModerationCog(commands.Cog):
         if config is None or not config["enabled"]:
             return
 
-        is_spam, spam_messages = await self.check_spam(
+        is_spam, spam_messages = self.check_spam(
             message,
             config["max_messages"],
             config["interval_seconds"]
@@ -375,20 +481,86 @@ class ModerationCog(commands.Cog):
 
         await self.handle_spam_detection(message, spam_messages)
 
-    async def check_spam(self, message: discord.Message, max_messages: int, interval_seconds: int):
+    def check_spam(self, message: discord.Message, max_messages: int, interval_seconds: int):
+        channel_spam, channel_messages = self.check_channel_spam(
+            message,
+            max_messages,
+            interval_seconds
+        )
+        cross_channel_spam, cross_channel_messages = self.check_cross_channel_spam(
+            message,
+            max_messages,
+            interval_seconds
+        )
+
+        if cross_channel_spam:
+            return True, cross_channel_messages
+
+        if channel_spam:
+            self.cross_channel_history.pop((message.guild.id, message.author.id), None)
+            return True, channel_messages
+
+        return False, []
+
+    def check_channel_spam(self, message: discord.Message, max_messages: int, interval_seconds: int):
         key = (message.guild.id, message.author.id, message.channel.id)
         now = time.time()
 
         history = self.message_history[key]
-        history.append((now, message))
+        history.append({
+            "created_at": now,
+            "message": message,
+        })
 
-        while history and now - history[0][0] > interval_seconds:
-            history.popleft()
+        self.prune_history(history, now, interval_seconds)
 
         if len(history) >= max_messages:
-            spam_messages = [msg for _, msg in history]
+            spam_messages = [entry["message"] for entry in history]
             history.clear()
             return True, spam_messages
+
+        return False, []
+
+    def check_cross_channel_spam(self, message: discord.Message, max_messages: int, interval_seconds: int):
+        fingerprints = self.build_spam_fingerprints(message)
+        if not fingerprints:
+            return False, []
+
+        key = (message.guild.id, message.author.id)
+        now = time.time()
+        history = self.cross_channel_history[key]
+
+        history.append({
+            "created_at": now,
+            "channel_id": message.channel.id,
+            "message": message,
+            "fingerprints": fingerprints,
+        })
+
+        self.prune_history(history, now, interval_seconds)
+
+        for fingerprint in fingerprints:
+            matches = [
+                entry
+                for entry in history
+                if fingerprint in entry["fingerprints"]
+            ]
+            unique_channel_ids = {
+                entry["channel_id"]
+                for entry in matches
+            }
+            threshold = self.cross_channel_threshold(fingerprint[0], max_messages)
+
+            if (
+                len(matches) >= threshold
+                and len(unique_channel_ids) >= self.CROSS_CHANNEL_MIN_CHANNELS
+            ):
+                spam_messages = [
+                    entry["message"]
+                    for entry in matches
+                ]
+                history.clear()
+                return True, spam_messages
 
         return False, []
 

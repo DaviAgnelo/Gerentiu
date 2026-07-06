@@ -26,7 +26,7 @@ UNICODE_EMOJI_RE = re.compile(
     flags=re.UNICODE
 )
 #Plese, don't touch any of this, these are the Unicodes for the most common emojis, if you change any of this... good luck
-URL_RE = re.compile(r'http?://\S+')
+URL_RE = re.compile(r'https?://\S+')
 MENTION_RE = re.compile(r'<@!?\d+>|<@&\d+>|<#\d+>')
 PLAIN_MENTION_RE = re.compile(r'(?<!\w)@(everyone|here)\b')
 #This here just recompiles the emojis back from Unicode, don't touch this or I will pull your leg while you sleep
@@ -145,7 +145,7 @@ class TranslationListenerCog(commands.Cog):
             lines.append("...")
 
         quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in lines)
-        return f"> **{author_name}**: {quoted}"
+        return f"> **{author_name}**:\n{quoted}"
 #This was a request made from some people that wanted replies on the mirroring channels, this is a very
 #delicate function, don't touch it if you want to be sane... it shows what message the person is replying to
 
@@ -191,17 +191,23 @@ class TranslationListenerCog(commands.Cog):
 #Just like above, if it does not need to be translate, don't consume my CPU
             translated_snippet = None
 
+            if needs_special_token_protection(raw_snippet):
+                protected_snippet, snippet_placeholders = protect_special_tokens(raw_snippet)
+            else:
+                protected_snippet, snippet_placeholders = raw_snippet, []
+
             try:
                 translated_snippet = await asyncio.to_thread(
                     translate.translate,
-                    raw_snippet,
+                    protected_snippet,
                     src_lang,
                     dst_lang
                 )
+                translated_snippet = restore_special_tokens(translated_snippet, snippet_placeholders)
             except Exception:
                 translated_snippet = None
 #Ok, you can translate now
-            snippet = translated_snippet
+            snippet = translated_snippet or raw_snippet
 
             return self.format_reply_block(referenced.author.display_name, snippet)
 #Finally, the reply is ready and being shipped

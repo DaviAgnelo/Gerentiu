@@ -39,6 +39,13 @@ async def build_files_from_attachments(message: discord.Message) -> list[discord
 
     return files
 
+def rewind_files(files: list[discord.File]) -> None:
+    for file in files:
+        try:
+            file.fp.seek(0)
+        except (AttributeError, OSError, ValueError):
+            pass
+
 async def mirror_via_webhook(
     source_message: discord.Message,
     target_channel: discord.TextChannel,
@@ -69,4 +76,5 @@ async def mirror_via_webhook(
 
         webhook = await get_or_create_webhook(target_channel)
         send_kwargs.pop("embeds", None)
+        rewind_files(files)
         await webhook.send(**send_kwargs)

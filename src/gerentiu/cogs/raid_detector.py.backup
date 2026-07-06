@@ -45,26 +45,6 @@ class RaidDetector:
         return self.guild_data[guild_id]
 #If the server I'm veryfying is not currently saved, get all the server's needed data from the GuildRaidData class
 
-    def reset_guild(self, guild_id):
-        self.guild_data.pop(guild_id, None)
-
-    def get_state(self, guild_id):
-        data = self.guild_data.get(guild_id)
-        if data is None:
-            return {
-                "state": "NORMAL",
-                "score": 0,
-                "join_count": 0,
-                "suspicious_message_count": 0,
-            }
-
-        return {
-            "state": data.current_state,
-            "score": data.last_score,
-            "join_count": len(data.join_events),
-            "suspicious_message_count": len(data.suspicious_message_events),
-        }
-
     def _prune_guild_data(self, data, config):
         now = time.time()
 
