@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from gerentiu.cogs.raid_detector import DEFAULT_RAID_CONFIG, RaidDetector
+from gerentiu.permission_policy import missing_antiraid_permissions
 from gerentiu.db import (
     clear_antiraid_lockdown_channel,
     get_antiraid_config,
@@ -71,13 +72,7 @@ class AntiRaidCog(commands.Cog):
         if me is None:
             return ["Could not resolve bot member."]
 
-        missing = []
-        perms = me.guild_permissions
-
-        if action == "lockdown" and not perms.manage_channels:
-            missing.append("Manage Channels")
-
-        return missing
+        return missing_antiraid_permissions(me.guild_permissions, action)
 
     async def resolve_alert_channel(
         self,

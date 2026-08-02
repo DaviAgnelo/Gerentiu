@@ -1,19 +1,37 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Virtualenv
+# Virtual environments
 .venv/
 venv/
 
-# Env
+# Local environment and secrets
 .env
+.env.*
+!.env.example
 
-# Database
+# Runtime data
 *.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
 *.db
 
-# OS
+# Local models and generated artifacts
+models/
+*.bin
+*.pt
+*.onnx
+*.backup
+*.save*
+
+# Editors and operating systems
+.idea/
+.vscode/
 .DS_Store
+Thumbs.db

@@ -1,6 +1,10 @@
 import asyncio
 import discord
+import html
+import os
 import re
+import requests
+from dataclasses import dataclass
 from discord.ext import commands
 from argostranslate import translate
 from gerentiu.db import get_translation_hub_by_channel
@@ -30,6 +34,26 @@ URL_RE = re.compile(r'https?://\S+')
 MENTION_RE = re.compile(r'<@!?\d+>|<@&\d+>|<#\d+>')
 PLAIN_MENTION_RE = re.compile(r'(?<!\w)@(everyone|here)\b')
 #This here just recompiles the emojis back from Unicode, don't touch this or I will pull your leg while you sleep
+
+ARGOS_PROVIDER = "argos"
+FALLBACK_PROVIDER = "mymemory"
+FALLBACK_API_URL = os.getenv(
+    "GERENTIU_TRANSLATION_FALLBACK_URL",
+    "https://api.mymemory.translated.net/get",
+)
+FALLBACK_API_EMAIL = os.getenv("GERENTIU_TRANSLATION_FALLBACK_EMAIL")
+FALLBACK_TIMEOUT_SECONDS = 8
+FORCED_FALLBACK_PAIRS = {("es", "en")}
+_ARGOS_PAIR_CACHE: dict[tuple[str, str], bool] = {}
+
+
+@dataclass(slots=True)
+class TranslationResult:
+    text: str
+    provider: str
+    used_fallback: bool
+    reason: str
+
 
 def needs_special_token_protection(text: str) -> bool:
     return (
@@ -76,6 +100,104 @@ def restore_special_tokens(text: str, placeholders):
         text = text.replace(token, original)
     return text
 #Now retore the tokens that were protected
+
+def argos_pair_available(src_lang: str, dst_lang: str) -> bool:
+    key = (src_lang, dst_lang)
+    if key in _ARGOS_PAIR_CACHE:
+        return _ARGOS_PAIR_CACHE[key]
+
+    try:
+        installed_languages = translate.get_installed_languages()
+        from_lang = next(
+            (lang for lang in installed_languages if normalize_lang(getattr(lang, "code", "")) == src_lang),
+            None,
+        )
+        to_lang = next(
+            (lang for lang in installed_languages if normalize_lang(getattr(lang, "code", "")) == dst_lang),
+            None,
+        )
+        has_pair = bool(from_lang and to_lang and from_lang.get_translation(to_lang))
+    except Exception as exc:
+        print(f"[translation] Argos pair check failed ({src_lang} -> {dst_lang}): {exc}")
+        has_pair = False
+
+    _ARGOS_PAIR_CACHE[key] = has_pair
+    return has_pair
+
+
+def fallback_translate(text: str, src_lang: str, dst_lang: str) -> str:
+    if not FALLBACK_API_URL:
+        raise RuntimeError("translation fallback API URL is not configured")
+
+    params = {
+        "q": text,
+        "langpair": f"{src_lang}|{dst_lang}",
+    }
+    if FALLBACK_API_EMAIL:
+        params["de"] = FALLBACK_API_EMAIL
+
+    response = requests.get(
+        FALLBACK_API_URL,
+        params=params,
+        timeout=FALLBACK_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+
+    payload = response.json()
+    response_status = int(payload.get("responseStatus") or 200)
+    if response_status >= 400:
+        detail = payload.get("responseDetails") or "fallback API rejected the translation"
+        raise RuntimeError(str(detail))
+
+    translated = ((payload.get("responseData") or {}).get("translatedText") or "").strip()
+    if not translated:
+        raise RuntimeError("fallback API returned an empty translation")
+
+    return html.unescape(translated)
+
+
+def translate_with_safe_fallback(text: str, src_lang: str, dst_lang: str) -> TranslationResult:
+    src_lang = normalize_lang(src_lang)
+    dst_lang = normalize_lang(dst_lang)
+
+    if not text or not src_lang or not dst_lang:
+        return TranslationResult("", "none", False, "missing_text_or_language")
+
+    if src_lang == dst_lang:
+        return TranslationResult(text, "none", False, "same_language")
+
+    fallback_reason = ""
+
+    # Main route: use Argos whenever the requested pair is installed and usable.
+    if (src_lang, dst_lang) not in FORCED_FALLBACK_PAIRS:
+        if argos_pair_available(src_lang, dst_lang):
+            try:
+                translated = translate.translate(text, src_lang, dst_lang)
+                return TranslationResult(translated or "", ARGOS_PROVIDER, False, "primary")
+            except Exception as exc:
+                fallback_reason = f"argos_error:{type(exc).__name__}"
+                print(f"[translation] Argos failed ({src_lang} -> {dst_lang}); trying fallback: {exc}")
+        else:
+            fallback_reason = "argos_pair_unavailable"
+    else:
+        # Fallback route: es -> en bypasses Argos because of its known issue for this pair.
+        fallback_reason = "forced_fallback_for_es_en_argos_bug"
+
+    try:
+        translated = fallback_translate(text, src_lang, dst_lang)
+        return TranslationResult(translated, FALLBACK_PROVIDER, True, fallback_reason)
+    except Exception as exc:
+        print(f"[translation] Fallback failed ({src_lang} -> {dst_lang}, reason={fallback_reason}): {exc}")
+        return TranslationResult("", "fallback_failed", True, fallback_reason)
+
+
+def log_translation_route(context: str, src_lang: str, dst_lang: str, result: TranslationResult) -> None:
+    print(
+        "[translation] "
+        f"context={context} pair={src_lang}->{dst_lang} "
+        f"provider={result.provider} fallback={result.used_fallback} reason={result.reason}"
+    )
+
 
 class TranslationListenerCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -197,14 +319,17 @@ class TranslationListenerCog(commands.Cog):
                 protected_snippet, snippet_placeholders = raw_snippet, []
 
             try:
-                translated_snippet = await asyncio.to_thread(
-                    translate.translate,
+                snippet_result = await asyncio.to_thread(
+                    translate_with_safe_fallback,
                     protected_snippet,
                     src_lang,
                     dst_lang
                 )
-                translated_snippet = restore_special_tokens(translated_snippet, snippet_placeholders)
-            except Exception:
+                log_translation_route("reply", src_lang, dst_lang, snippet_result)
+                if snippet_result.text:
+                    translated_snippet = restore_special_tokens(snippet_result.text, snippet_placeholders)
+            except Exception as exc:
+                print(f"[translation] Reply translation crashed ({src_lang} -> {dst_lang}): {exc}")
                 translated_snippet = None
 #Ok, you can translate now
             snippet = translated_snippet or raw_snippet
@@ -276,12 +401,14 @@ class TranslationListenerCog(commands.Cog):
 
             if self.has_translatable_text(text) and source_language and dst_lang and source_language != dst_lang:
                 try:
-                    translated = await asyncio.to_thread(
-                        translate.translate,
+                    translation_result = await asyncio.to_thread(
+                        translate_with_safe_fallback,
                         protected_text,
                         source_language,
                         dst_lang
                     )
+                    log_translation_route("message", source_language, dst_lang, translation_result)
+                    translated = translation_result.text
                 except Exception as e:
                     print(f"Erro na tradução ({source_language} -> {dst_lang}): {e}")
                     translated = None
