@@ -28,10 +28,10 @@ COGS = (
 class GerentiuBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.guilds = True #Recebe eventos em servidores
-        intents.members = True #Recebe eventos de entrada de membros para o anti-raid
-        intents.messages = True #Recebe eventos de mensagens (on_message, message_delete, etc.)
-        intents.message_content = True #Nao le o conteudo das mensagens que recebe
+        intents.guilds = True  # Server and channel state used by commands and hubs.
+        intents.members = True  # Privileged: member join events used by anti-raid.
+        intents.messages = True  # Message events used by stats, anti-spam and translation.
+        intents.message_content = True  # Privileged: content, embeds and attachments.
         super().__init__(command_prefix="!", intents=intents)
 
 #GerentiuBot e a classe criada, com os eventos que o bot quer receber do Discord

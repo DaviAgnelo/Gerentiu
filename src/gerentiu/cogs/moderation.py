@@ -13,6 +13,10 @@ from gerentiu.db import (
     set_antispam_max_punishment,
     increment_antispam_strikes
 )
+from gerentiu.permission_policy import (
+    ANTISPAM_PUNISHMENT_ORDER,
+    missing_antispam_permissions,
+)
 from collections import defaultdict, deque
 
 URL_RE = re.compile(
@@ -41,27 +45,16 @@ class ModerationCog(commands.Cog):
 # Comando teste para verificar se o bot está respondendo
 
     @staticmethod
-    def get_missing_antispam_permissions(guild: discord.Guild) -> list[str]:
+    def get_missing_antispam_permissions(
+        guild: discord.Guild,
+        max_punishment: str,
+    ) -> list[str]:
+        """Return only the permissions needed up to the configured punishment."""
         me = guild.me
         if me is None:
             return ["Could not resolve bot member."]
 
-        perms = me.guild_permissions
-        missing = []
-
-        if not perms.manage_messages:
-            missing.append("Manage Messages")
-
-        if not perms.moderate_members:
-            missing.append("Moderate Members")
-
-        if not perms.kick_members:
-            missing.append("Kick Members")
-
-        if not perms.ban_members:
-            missing.append("Ban Members")
-
-        return missing
+        return missing_antispam_permissions(me.guild_permissions, max_punishment)
 
     antispam_group = app_commands.Group(
         name="antispam",
@@ -78,7 +71,11 @@ class ModerationCog(commands.Cog):
             )
             return
 
-        missing = self.get_missing_antispam_permissions(interaction.guild)
+        config = await get_antispam_config(interaction.guild.id)
+        missing = self.get_missing_antispam_permissions(
+            interaction.guild,
+            config["max_punishment"],
+        )
         if missing:
             await interaction.response.send_message(
                 "Gerentiu is missing the following permissions: " + ", ".join(missing),
@@ -120,15 +117,11 @@ class ModerationCog(commands.Cog):
             )
             return
 
-        missing = self.get_missing_antispam_permissions(interaction.guild)
-        if missing:
-            await interaction.response.send_message(
-                "Gerentiu is missing the following permissions: " + ", ".join(missing),
-                ephemeral=True
-            )
-            return
-
         config = await get_antispam_config(interaction.guild.id)
+        missing = self.get_missing_antispam_permissions(
+            interaction.guild,
+            config["max_punishment"],
+        )
 
         status_text = "ACTIVE" if config["enabled"] else "INACTIVE"
 
@@ -140,6 +133,11 @@ class ModerationCog(commands.Cog):
         embed.add_field(name="Max messages", value=str(config["max_messages"]), inline=True)
         embed.add_field(name="Intervals", value=str(config["interval_seconds"]), inline=True)
         embed.add_field(name="Max punishment", value=config["max_punishment"], inline=True)
+        embed.add_field(
+            name="Missing bot permissions",
+            value=", ".join(missing) if missing else "None",
+            inline=False,
+        )
         embed.add_field(
             name="Cross-channel protection",
             value="Same links and repeated messages across channels",
@@ -186,14 +184,6 @@ class ModerationCog(commands.Cog):
             )
             return
 
-        missing = self.get_missing_antispam_permissions(interaction.guild)
-        if missing:
-            await interaction.response.send_message(
-                "Gerentiu is missing the following permissions: " + ", ".join(missing),
-                ephemeral=True
-            )
-            return
-
         if value < 2 or value > 20:
             await interaction.response.send_message(
                 "Value must be between 2 and 20.",
@@ -213,14 +203,6 @@ class ModerationCog(commands.Cog):
         if interaction.guild is None:
             await interaction.response.send_message(
                 f"This can only be used on servers.",
-                ephemeral=True
-            )
-            return
-
-        missing = self.get_missing_antispam_permissions(interaction.guild)
-        if missing:
-            await interaction.response.send_message(
-                "Gerentiu is missing the following permissions: " + ", ".join(missing),
                 ephemeral=True
             )
             return
@@ -251,6 +233,16 @@ class ModerationCog(commands.Cog):
         if interaction.guild is None:
             await interaction.response.send_message("This can only be used on servers.", ephemeral=True)
             return
+
+        missing = self.get_missing_antispam_permissions(interaction.guild, value.value)
+        if missing:
+            await interaction.response.send_message(
+                "Gerentiu is missing the permissions required for that punishment: "
+                + ", ".join(missing),
+                ephemeral=True,
+            )
+            return
+
         await set_antispam_max_punishment(interaction.guild.id, value.value)
 
         await interaction.response.send_message(f"Maximum antispam punishment set to '{value.value}'.", ephemeral=True)
@@ -346,15 +338,13 @@ class ModerationCog(commands.Cog):
             except discord.HTTPException:
                 pass
 
-    PUNISHMENT_ORDER = ["warn", "delete", "timeout", "kick", "ban"]
-
     def resolve_spam_punishment(self, strikes: int, max_punishment: str) -> str:
-        if max_punishment not in self.PUNISHMENT_ORDER:
+        if max_punishment not in ANTISPAM_PUNISHMENT_ORDER:
             max_punishment = "timeout"
 
-        max_index = self.PUNISHMENT_ORDER.index(max_punishment)
+        max_index = ANTISPAM_PUNISHMENT_ORDER.index(max_punishment)
         strike_index = min(strikes - 1, max_index)
-        return self.PUNISHMENT_ORDER[strike_index]
+        return ANTISPAM_PUNISHMENT_ORDER[strike_index]
 
     @staticmethod
     def unique_messages(messages: list[discord.Message]) -> list[discord.Message]:

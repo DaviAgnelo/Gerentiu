@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from gerentiu.db import (
     create_translation_hub,
+    delete_translation_hub,
     add_channel_to_hub,
     remove_channel_from_hub,
     list_translation_hubs,
@@ -121,6 +122,26 @@ class TranslateHubsCog(commands.Cog):
             msg = f"🗑️ {channel.mention} removido do hub {hub_id}"
         else:
             msg = f"⚠️ Canal não estava no hub"
+
+        await interaction.response.send_message(msg, ephemeral=True)
+
+    @app_commands.command(name="hub_delete", description="Deleta um hub de tradução inteiro.")
+    async def hub_delete(self, interaction: discord.Interaction, hub_id: int):
+        if not interaction.guild:
+            return await interaction.response.send_message("Use em um servidor.", ephemeral=True)
+
+        if not _is_admin(interaction):
+            return await interaction.response.send_message("Sem permissão.", ephemeral=True)
+
+        deleted = await delete_translation_hub(interaction.guild.id, hub_id)
+        listener = self.bot.get_cog("TranslationListenerCog")
+        if listener is not None:
+            listener.invalidate_translation_hub_cache(interaction.guild.id)
+
+        if deleted:
+            msg = f"🗑️ Hub {hub_id} deletado. Todos os canais configurados nele foram removidos."
+        else:
+            msg = "⚠️ Hub não encontrado nesse servidor."
 
         await interaction.response.send_message(msg, ephemeral=True)
 

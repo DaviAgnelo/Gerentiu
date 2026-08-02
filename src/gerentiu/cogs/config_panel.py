@@ -53,6 +53,25 @@ def channel_label(guild: discord.Guild, channel_id: int) -> str:
     return f"#{channel.name}"
 
 
+def selected_text_channel(
+    guild: discord.Guild | None,
+    selected: object,
+) -> discord.TextChannel | None:
+    """Resolve ChannelSelect values returned as channels or app-command models."""
+    if guild is None:
+        return None
+
+    channel_id = getattr(selected, "id", None)
+    channel = guild.get_channel(channel_id) if channel_id is not None else None
+    if isinstance(channel, discord.TextChannel):
+        return channel
+
+    if isinstance(selected, discord.TextChannel):
+        return selected
+
+    return None
+
+
 def hub_options(hubs: list[dict]) -> list[discord.SelectOption]:
     options = []
     for hub in hubs[:25]:
@@ -388,6 +407,25 @@ class AntiSpamConfigView(AdminConfigView):
 
     @discord.ui.button(label="Enable", style=discord.ButtonStyle.success)
     async def enable(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = await get_antispam_config(interaction.guild.id)
+        moderation_cog = interaction.client.get_cog("ModerationCog")
+        if moderation_cog is None:
+            return await interaction.response.send_message(
+                "Anti-spam cog is not loaded.",
+                ephemeral=True,
+            )
+
+        missing = moderation_cog.get_missing_antispam_permissions(
+            interaction.guild,
+            config["max_punishment"],
+        )
+        if missing:
+            return await interaction.response.send_message(
+                "Gerentiu is missing the permissions required by this configuration: "
+                + ", ".join(missing),
+                ephemeral=True,
+            )
+
         await set_antispam_enabled(interaction.guild.id, True)
         await interaction.response.edit_message(
             embed=await self.cog.build_antispam_embed(interaction.guild),
@@ -495,6 +533,24 @@ class AntiSpamPunishmentSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         view: AntiSpamPunishmentView = self.view  # type: ignore
+        moderation_cog = interaction.client.get_cog("ModerationCog")
+        if moderation_cog is None:
+            return await interaction.response.send_message(
+                "Anti-spam cog is not loaded.",
+                ephemeral=True,
+            )
+
+        missing = moderation_cog.get_missing_antispam_permissions(
+            interaction.guild,
+            self.values[0],
+        )
+        if missing:
+            return await interaction.response.send_message(
+                "Gerentiu is missing the permissions required for that punishment: "
+                + ", ".join(missing),
+                ephemeral=True,
+            )
+
         await set_antispam_max_punishment(interaction.guild.id, self.values[0])
         await interaction.response.edit_message(
             embed=await view.cog.build_antispam_embed(interaction.guild),
@@ -510,10 +566,27 @@ class AntiRaidConfigView(AdminConfigView):
 
     @discord.ui.button(label="Enable", style=discord.ButtonStyle.success)
     async def enable(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await set_antiraid_enabled(interaction.guild.id, True)
+        config = await get_antiraid_config(interaction.guild.id)
         antiraid_cog = interaction.client.get_cog("AntiRaidCog")
-        if antiraid_cog is not None:
-            antiraid_cog.detector.reset_guild(interaction.guild.id)
+        if antiraid_cog is None:
+            return await interaction.response.send_message(
+                "Anti-raid cog is not loaded.",
+                ephemeral=True,
+            )
+
+        missing = antiraid_cog.get_missing_antiraid_permissions(
+            interaction.guild,
+            config["action"],
+        )
+        if missing:
+            return await interaction.response.send_message(
+                "Gerentiu is missing the permissions required by this configuration: "
+                + ", ".join(missing),
+                ephemeral=True,
+            )
+
+        await set_antiraid_enabled(interaction.guild.id, True)
+        antiraid_cog.detector.reset_guild(interaction.guild.id)
 
         await interaction.response.edit_message(
             embed=await self.cog.build_antiraid_embed(interaction.guild),
@@ -728,8 +801,8 @@ class AntiRaidAlertChannelSelect(discord.ui.ChannelSelect):
 
     async def callback(self, interaction: discord.Interaction):
         view: AntiRaidAlertChannelView = self.view  # type: ignore
-        channel = self.values[0]
-        if not isinstance(channel, discord.TextChannel):
+        channel = selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
             return await interaction.response.send_message("Choose a text channel.", ephemeral=True)
 
         await set_antiraid_alert_channel(interaction.guild.id, channel.id)
@@ -778,6 +851,24 @@ class AntiRaidActionSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         view: AntiRaidActionView = self.view  # type: ignore
+        antiraid_cog = interaction.client.get_cog("AntiRaidCog")
+        if antiraid_cog is None:
+            return await interaction.response.send_message(
+                "Anti-raid cog is not loaded.",
+                ephemeral=True,
+            )
+
+        missing = antiraid_cog.get_missing_antiraid_permissions(
+            interaction.guild,
+            self.values[0],
+        )
+        if missing:
+            return await interaction.response.send_message(
+                "Gerentiu is missing the permissions required for that action: "
+                + ", ".join(missing),
+                ephemeral=True,
+            )
+
         await set_antiraid_action(interaction.guild.id, self.values[0])
         await interaction.response.edit_message(
             embed=await view.cog.build_antiraid_embed(interaction.guild),
@@ -965,8 +1056,8 @@ class HubTextChannelSelect(discord.ui.ChannelSelect):
 
     async def callback(self, interaction: discord.Interaction):
         view: AddHubChannelView = self.view  # type: ignore
-        channel = self.values[0]
-        if not isinstance(channel, discord.TextChannel):
+        channel = selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
             return await interaction.response.send_message("Choose a text channel.", ephemeral=True)
 
         view.selected_channel_id = channel.id
